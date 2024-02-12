@@ -1,0 +1,155 @@
+version: '3.7'
+
+x-airflow-custom: &airflow-custom
+  image: airflow_custom:latest
+  build:
+    context: .
+    dockerfile: ./airflow_custom/Dockerfile
+  platform: linux/amd64
+  environment: &airflow-common-env
+    AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    AIRFLOW__CORE__FERNET_KEY: ""
+    AIRFLOW__CORE__TEST_CONNECTION: "Enabled"
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__API__AUTH_BACKEND: "airflow.api.auth.backend.basic_auth"
+    _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
+    JAVA_HOME: ${JAVA_HOME:-/usr/lib/jvm/java-17-openjdk-amd64}
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./logs:/opt/airflow/logs
+    - ./plugins:/opt/airflow/plugins
+  user: "${AIRFLOW_UID:-50000}:${AIRFLOW_GID:-50000}"
+  depends_on:
+    postgres:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres-db-volume:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 5s
+      retries: 5
+    restart: always
+
+  airflow-webserver:
+    <<: *airflow-custom
+    command: webserver
+    container_name: airflow_webserver
+    ports:
+      - 8080:8080
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    restart: always
+
+  airflow-scheduler:
+    <<: *airflow-custom
+    command: scheduler
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'airflow jobs check --job-type SchedulerJob --hostname "$${HOSTNAME}"',
+        ]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    restart: always
+
+  airflow-init:
+    <<: *airflow-custom
+    command: version
+    environment:
+      <<: *airflow-common-env
+      _AIRFLOW_DB_UPGRADE: "true"
+      _AIRFLOW_WWW_USER_CREATE: "true"
+      _AIRFLOW_WWW_USER_USERNAME: ${_AIRFLOW_WWW_USER_USERNAME:-airflow}
+      _AIRFLOW_WWW_USER_PASSWORD: ${_AIRFLOW_WWW_USER_PASSWORD:-airflow}
+
+  docker-proxy:
+    image: bobrik/socat
+    command: "TCP4-LISTEN:2375,fork,reuseaddr UNIX-CONNECT:/var/run/docker.sock"
+    ports:
+      - "2376:2375"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - default
+
+  # Kafka Broker Instances
+  broker:
+    image: confluentinc/confluent-local:latest
+    container_name: broker
+    ports:
+      - '9094:9094'
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT,PLAINTEXT:PLAINTEXT'
+      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://broker:9092,EXTERNAL://localhost:9094'
+      KAFKA_PROCESS_ROLES: 'broker,controller'
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@broker:9093'
+      KAFKA_LISTENERS: 'PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094'
+    networks:
+      - kafka_network
+      - default
+
+  # Kafka User Interface
+  kafka_ui:
+    container_name: kafka-ui-1
+    image: provectuslabs/kafka-ui:latest
+    ports:
+      - 8888:8080
+    depends_on:
+      - broker
+    environment:
+      - KAFKA_CLUSTERS_0_NAME=${KAFKA_CLUSTERS_0_NAME}
+      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=${KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS}
+      # - KAFKA_CLUSTERS_0_SCHEMAREGISTRY=${KAFKA_CLUSTERS_0_SCHEMAREGISTRY}
+      # - KAFKA_CLUSTERS_0_KAFKACONNECT_0_NAME=${KAFKA_CLUSTERS_0_KAFKACONNECT_0_NAME}
+      # - KAFKA_CLUSTERS_0_KAFKACONNECT_0_ADDRESS=${KAFKA_CLUSTERS_0_KAFKACONNECT_0_ADDRESS}
+      - DYNAMIC_CONFIG_ENABLED=${DYNAMIC_CONFIG_ENABLED}
+    networks:
+      - kafka_network
+      - default
+
+  # Apache Spark Master Node
+  spark_master:
+    image: bitnami/spark:latest
+    container_name: spark_master
+    ports:
+      - 8085:8080
+      - 7077:7077
+    environment:
+      - SPARK_UI_PORT=${SPARK_UI_PORT}
+      - SPARK_MODE=${SPARK_MODE}
+      - SPARK_RPC_AUTHENTICATION_ENABLED=${SPARK_RPC_AUTHENTICATION_ENABLED}
+      - SPARK_RPC_ENCRYPTION_ENABLED=${SPARK_RPC_ENCRYPTION_ENABLED}
+    volumes:
+      - ./:/home
+      - spark_data:/opt/bitnami/spark/data
+    networks:
+      - default
+      - kafka_network
+
+#volumes for data
+volumes:
+  spark_data:
+  postgres-db-volume:
+
+#network for Kafka
+networks:
+  kafka_network:
+    driver: bridge
+  default:
+    external:
+      name: docker_streaming
