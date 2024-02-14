@@ -5,6 +5,7 @@ from pyspark.sql.types import StructType, StructField, StringType, IntegerType, 
 import datetime
 import pyspark.pandas as ps
 import pandas as pd
+import os
 
 
 # Initialize logging
@@ -206,9 +207,8 @@ def initiate_streaming_to_bucket(df, path):
 
 def main():
     app_name = "SparkStructuredStreamingToS3"
-    # TODO: move the access keys to env variable
-    access_key = "XXXXXXXXXXXXXXXXX"
-    secret_key = "XXXXXXXXXXXXXXXXXXXXXXXXXX"
+    access_key = os.environ['AWS_ACCESS_KEY']
+    secret_key = os.environ['AWS_SECRET_KEY']
     brokers = "broker:19092"
     topic = "shot_charts"
     path = "s3://nba-shot-charts"
