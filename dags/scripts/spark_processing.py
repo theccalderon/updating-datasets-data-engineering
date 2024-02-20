@@ -88,16 +88,19 @@ def transform_streaming_data(spark, df):
         .add("y", StringType())
         .add("play", StringType())
     )
-    df = df.select(from_json(col("value").cast("string"), json_schema).alias("value"))
 
-    query = df.writeStream.outputMode("append").format("console").start()
+    parsed_df = df.selectExpr("CAST(key AS STRING)", "CAST(value AS STRING)") \
+    .withColumn("parsed_value", from_json(col("value"), json_schema)) \
+    .select("parsed_value.*")
+
+    query = parsed_df.writeStream.outputMode("append").format("console").start()
     time.sleep(10)
     query.stop()
 
     # get unique list of game ids
-    game_ids = df.drop_duplicates(['game_id']).select(['game_id']).rdd.flatMap(lambda x: x).collect()
+    game_ids = parsed_df.drop_duplicates(['game_id']).select(['game_id']).rdd.flatMap(lambda x: x).collect()
     #add columns to dataframe
-    list_of_columns = df.columns + ["time_remaining","quarter"]
+    list_of_columns = parsed_df.columns + ["time_remaining","quarter"]
     # create empty dataframe with list of columns
     # final_df = pd.DataFrame(columns=list_of_columns)
     final_df = spark.createDataFrame(data=[],schema=list_of_columns)
@@ -105,7 +108,7 @@ def transform_streaming_data(spark, df):
     # for each game
     for game in game_ids:
         # get dataframe of shots on that game
-        temp_df = df.filter(col("game_id")==game)
+        temp_df = parsed_df.filter(col("game_id")==game)
         # populate the time_remaining column
         # temp_df['time_remaining'] = temp_df['play'].apply(lambda x: datetime.datetime.strptime(str(x).split(' ')[2], '%H:%M.%S')) 
         time_remaining_UDF = udf(lambda x:time_remaining(x),TimestampType()) 
