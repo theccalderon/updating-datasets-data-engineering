@@ -91,7 +91,7 @@ def transform_streaming_data(spark, df):
         .add("play", StringType())
     )
     df = base_df.select(
-        from_json(col("value"), schema).alias("sample")
+        from_json(col("value"), schema)
     )
 
     # get unique list of game ids
