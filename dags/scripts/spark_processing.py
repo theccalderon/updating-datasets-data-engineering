@@ -74,11 +74,9 @@ def transform_streaming_data(spark, df):
     :param df: Initial dataframe with raw data.
     :return: Transformed dataframe.
     """
-    # working with pandas
-    # shots_df = df.pandas_api()
-    base_df = df.selectExpr("CAST(value as STRING)")
-    logger.info(base_df.printSchema())
-    sample_schema = (
+    
+    # base_df = df.selectExpr("CAST(value as STRING)")
+    json_schema = (
         StructType()
         .add("game_id", StringType())
         .add("year", StringType())
@@ -90,9 +88,11 @@ def transform_streaming_data(spark, df):
         .add("y", StringType())
         .add("play", StringType())
     )
-    info_dataframe = base_df.select(
-        from_json(col("value"), sample_schema).alias("sample"), "timestamp"
-    )
+    df = df.select(from_json(col("value").cast("string"), json_schema).alias("value"))
+
+    query = df.writeStream.outputMode("append").format("console").start()
+    time.sleep(10)
+    query.stop()
 
     # get unique list of game ids
     game_ids = df.drop_duplicates(['game_id']).select(['game_id']).rdd.flatMap(lambda x: x).collect()
