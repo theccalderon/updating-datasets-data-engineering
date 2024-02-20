@@ -60,9 +60,6 @@ def get_streaming_dataframe(spark, brokers, topic):
             .option("startingOffsets", "earliest") \
             .load()
         logger.info("Streaming dataframe fetched successfully")
-        query = df.writeStream.format("console").start()
-        time.sleep(10) # sleep 10 seconds
-        query.stop()
         return df
 
     except Exception as e:
@@ -79,6 +76,23 @@ def transform_streaming_data(spark, df):
     """
     # working with pandas
     # shots_df = df.pandas_api()
+    base_df = df.selectExpr("CAST(value as STRING)")
+    base_df.printSchema()
+    schema = (
+        StructType()
+        .add("game_id", StringType())
+        .add("year", StringType())
+        .add("month", StringType())
+        .add("day", StringType())
+        .add("winner", StringType())
+        .add("loser", StringType())
+        .add("x", StringType())
+        .add("y", StringType())
+        .add("play", StringType())
+    )
+    df = base_df.select(
+        from_json(col("value"), schema).alias("sample")
+    )
 
     # get unique list of game ids
     game_ids = df.drop_duplicates(['game_id']).select(['game_id']).rdd.flatMap(lambda x: x).collect()
