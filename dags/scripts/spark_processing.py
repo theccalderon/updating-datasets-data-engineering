@@ -59,6 +59,7 @@ def get_streaming_dataframe(spark, brokers, topic):
             .option("startingOffsets", "earliest") \
             .load()
         logger.info("Streaming dataframe fetched successfully")
+        logger.info(df.show())
         return df
 
     except Exception as e:
