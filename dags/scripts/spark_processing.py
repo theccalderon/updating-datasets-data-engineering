@@ -6,6 +6,7 @@ import datetime
 import pyspark.pandas as ps
 import pandas as pd
 import os
+import time
 
 # Initialize logging
 logging.basicConfig(level=logging.INFO,
@@ -59,7 +60,9 @@ def get_streaming_dataframe(spark, brokers, topic):
             .option("startingOffsets", "earliest") \
             .load()
         logger.info("Streaming dataframe fetched successfully")
-        logger.info(df.show())
+        query = df.writeStream.format("console").start()
+        time.sleep(10) # sleep 10 seconds
+        query.stop()
         return df
 
     except Exception as e:
