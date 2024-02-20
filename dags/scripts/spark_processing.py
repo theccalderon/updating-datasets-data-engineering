@@ -1,7 +1,7 @@
 import logging
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import from_json, col
-from pyspark.sql.types import StructType, StructField, StringType, IntegerType, FloatType
+from pyspark.sql.functions import from_json, col, udf
+from pyspark.sql.types import StructType, StructField, StringType, IntegerType, FloatType, TimestampType
 import datetime
 import pyspark.pandas as ps
 import pandas as pd
@@ -66,7 +66,7 @@ def get_streaming_dataframe(spark, brokers, topic):
         return None
 
 
-def transform_streaming_data(df):
+def transform_streaming_data(spark, df):
     """
     Transform the initial dataframe to get the final structure.
     
@@ -74,28 +74,90 @@ def transform_streaming_data(df):
     :return: Transformed dataframe.
     """
     # working with pandas
-    shots_df = df.pandas_api()
-    game_ids = shots_df.drop_duplicates(subset='game_id')['game_id'].tolist()
-    list_of_columns = shots_df.columns.values.tolist() + ["time_remaining","quarter"]
-    final_df = pd.DataFrame(columns=list_of_columns)
+    # shots_df = df.pandas_api()
+
+    # get unique list of game ids
+    game_ids = df.drop_duplicates(['game_id']).select(['game_id']).rdd.flatMap(lambda x: x).collect()
+    #add columns to dataframe
+    list_of_columns = df.columns + ["time_remaining","quarter"]
+    # create empty dataframe with list of columns
+    # final_df = pd.DataFrame(columns=list_of_columns)
+    final_df = spark.createDataFrame(data=[],schema=list_of_columns)
+
+    # for each game
     for game in game_ids:
-        temp_df = shots_df.loc[df['game_id']==game]
-        temp_df['time_remaining'] = temp_df['play'].apply(lambda x: datetime.datetime.strptime(str(x).split(' ')[2], '%H:%M.%S')) 
-        temp_df['quarter'] = temp_df['play'].apply(lambda x: str(x).split(' ')[0][0]) 
+        # get dataframe of shots on that game
+        temp_df = df.filter(col("game_id")==game)
+        # populate the time_remaining column
+        # temp_df['time_remaining'] = temp_df['play'].apply(lambda x: datetime.datetime.strptime(str(x).split(' ')[2], '%H:%M.%S')) 
+        time_remaining_UDF = udf(lambda x:time_remaining(x),TimestampType()) 
+        temp_df = temp_df.withColumn("time_remaining", time_remaining_UDF(col("play")))
 
-        temp_df = temp_df.sort_values(by=['quarter','time_remaining'],ascending=[True,False])
-    #     print(temp_df.head())
-        final_df = final_df.append(temp_df)
+        # populate the quarter column
+        # temp_df['quarter'] = temp_df['play'].apply(lambda x: str(x).split(' ')[0][0]) 
+        quarter_UDF = udf(lambda x:quarter(x), StringType())
+        temp_df = temp_df.withColumn("quarter", quarter_UDF(col("play")))
 
-    final_df['time_remaining'] = final_df['play'].apply(lambda x: str(x).split(' ')[2]) 
-    final_df['shots_by'] = final_df['play'].apply(lambda x: str(x).split('<br>')[1].split(' ')[0]+" "+str(x).split('<br>')[1].split(' ')[1]) 
-    final_df['outcome'] = final_df['play'].apply(lambda x: str(x).split('<br>')[1].split(' ')[2]) 
-    final_df['attempt'] = final_df['play'].apply(lambda x: str(x).split('<br>')[1].split(' ')[3]) 
-    final_df['distance'] = final_df['play'].apply(lambda x: str(x).split('<br>')[1].split(' ')[-2]+str(x).split('<br>')[1].split(' ')[-1]) 
-    final_df['team'] = final_df['play'].apply(lambda x: get_team(x)) 
-    final_df['winner_score'] = final_df.apply(lambda x: get_winner_score(x.winner, x.team, x.play), axis=1) 
-    final_df['loser_score'] = final_df.apply(lambda x: get_loser_score(x.loser, x.team, x.play), axis=1) 
-    return  ps.from_pandas(final_df)
+        #  sort the plays by quarter and time_remaining
+        temp_df = temp_df.sort(['quarter','time_remaining'],ascending=[True,False])
+        # add the new dataframe to the final df
+        final_df = final_df.union(temp_df)
+
+    # bunch of transformations
+    # final_df['time_remaining'] = final_df['play'].apply(lambda x: str(x).split(' ')[2]) 
+    time_remaining_final_UDF = udf(lambda x: time_remaining_final(x), StringType())
+    final_df = final_df.withColumn("time_remaining", time_remaining_final_UDF(col("play")))
+
+    # final_df['shots_by'] = final_df['play'].apply(lambda x: str(x).split('<br>')[1].split(' ')[0]+" "+str(x).split('<br>')[1].split(' ')[1]) 
+    shots_by_final_UDF = udf(lambda x: shots_by_final(x), StringType())
+    final_df = final_df.withColumn("shots_by", shots_by_final_UDF(col("play")))
+
+    # final_df['outcome'] = final_df['play'].apply(lambda x: str(x).split('<br>')[1].split(' ')[2]) 
+    outcome_final_UDF = udf(lambda x: outcome_final(x), StringType())
+    final_df = final_df.withColumn("outcome", outcome_final_UDF(col("play")))
+
+    # final_df['attempt'] = final_df['play'].apply(lambda x: str(x).split('<br>')[1].split(' ')[3]) 
+    attempt_final_UDF = udf(lambda x: attempt_final(x), StringType())
+    final_df = final_df.withColumn("attempt", attempt_final_UDF(col("play")))
+
+    # final_df['distance'] = final_df['play'].apply(lambda x: str(x).split('<br>')[1].split(' ')[-2]+str(x).split('<br>')[1].split(' ')[-1]) 
+    distance_final_UDF = udf(lambda x: distance_final(x), StringType())
+    final_df = final_df.withColumn("distance", distance_final_UDF(col("play")))
+
+    # final_df['team'] = final_df['play'].apply(lambda x: get_team(x)) 
+    team_UDF = udf(lambda x: get_team(x), StringType())
+    final_df = final_df.withColumn("team", team_UDF(col("play")))
+
+    # final_df['winner_score'] = final_df.apply(lambda x: get_winner_score(x.winner, x.team, x.play), axis=1) 
+    winner_score_UDF = udf(lambda x: get_winner_score(x), StringType())
+    final_df = final_df.withColumn("winner_score", winner_score_UDF(col("play")))
+
+    # final_df['loser_score'] = final_df.apply(lambda x: get_loser_score(x.loser, x.team, x.play), axis=1) 
+    loser_score_UDF = udf(lambda x: get_loser_score(x), StringType())
+    final_df = final_df.withColumn("loser_score", loser_score_UDF(col("play")))
+
+    return  final_df
+
+def time_remaining(x):
+    return datetime.datetime.strptime(str(x).split(' ')[2], '%H:%M.%S')
+
+def quarter(x):
+    return str(x).split(' ')[0][0]
+
+def time_remaining_final(x):
+    return str(x).split(' ')[2]
+
+def shots_by_final(x):
+    return str(x).split('<br>')[1].split(' ')[0]+" "+str(x).split('<br>')[1].split(' ')[1]
+
+def outcome_final(x):
+    return str(x).split('<br>')[1].split(' ')[2]
+
+def attempt_final(x):
+    return str(x).split('<br>')[1].split(' ')[3]
+
+def distance_final(x):
+    return str(x).split('<br>')[1].split(' ')[-2]+str(x).split('<br>')[1].split(' ')[-1]
 
 def get_team(play):
     team = play.split('<br>')[2].split(' ')
@@ -218,7 +280,7 @@ def main():
     if spark:
         df = get_streaming_dataframe(spark, brokers, topic)
         if df:
-            transformed_df = transform_streaming_data(df)
+            transformed_df = transform_streaming_data(spark, df)
             initiate_streaming_to_bucket(transformed_df, path)
 
 
