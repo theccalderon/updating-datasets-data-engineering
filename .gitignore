@@ -5,5 +5,6 @@ scheduler/
 scheduler_dg/
 plugins/
 .env
+dags/dependencies
 
 
