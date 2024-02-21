@@ -274,7 +274,7 @@ def get_loser_score(loser, team, play):
             #now tied
             return desc[3].split('-')[0]
 
-def initiate_streaming_to_bucket(df, path):
+def initiate_streaming_to_bucket(df, path, checkpoint_location):
     """
     Start streaming the transformed data to the specified S3 bucket in parquet format.
     
@@ -283,7 +283,7 @@ def initiate_streaming_to_bucket(df, path):
     :return: None
     """
     logger.info("Initiating streaming process...")
-    stream_query = df.writeStream.format("parquet").outputMode("append").option("path", path).start()
+    stream_query = df.writeStream.format("parquet").outputMode("append").option("path", path).option("checkpointLocation", checkpoint_location).start()
     stream_query.awaitTermination()
 
 
@@ -295,9 +295,9 @@ def main():
     brokers = "broker:19092"
     topic = "shot_charts"
     path = "s3a://nba-shot-charts"
-    # checkpoint_location = "CHECKPOINT_LOCATION"
+    checkpoint_location = "/opt/airflow/dags/"
 
-    spark = initialize_spark_session(app_name, access_key, secret_key)
+    spark = initialize_spark_session(app_name, access_key, secret_key, checkpoint_location)
     if spark:
         df = get_streaming_dataframe(spark, brokers, topic)
         if df:
