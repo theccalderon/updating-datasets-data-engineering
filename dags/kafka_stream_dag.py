@@ -44,7 +44,7 @@ with DAG(
         application = "/opt/airflow/dags/scripts/spark_processing.py",
         conn_id = "spark-docker",
         packages = "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0",
-        jars = "/opt/airflow/dags/dependencies/aws-java-sdk-bundle-1.11.1026.jar, /opt/airflow/dags/dependencies/hadoop-aws-3.3.2.jar",
+        jars = "/opt/airflow/dags/dependencies/aws-java-sdk-bundle-1.11.1026.jar,/opt/airflow/dags/dependencies/hadoop-aws-3.3.2.jar",
         verbose = False
     )
     
