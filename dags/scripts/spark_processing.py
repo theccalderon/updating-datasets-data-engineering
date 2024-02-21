@@ -93,10 +93,6 @@ def transform_streaming_data(spark, df):
     .withColumn("parsed_value", from_json(col("value"), json_schema)) \
     .select("parsed_value.*")
 
-    query = parsed_df.writeStream.outputMode("append").format("console").start()
-    time.sleep(10)
-    query.stop()
-
     # get unique list of game ids
     game_ids = parsed_df.drop_duplicates(['game_id']).select(['game_id']).rdd.flatMap(lambda x: x).collect()
     #add columns to dataframe
