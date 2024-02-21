@@ -283,11 +283,7 @@ def initiate_streaming_to_bucket(df, path):
     :return: None
     """
     logger.info("Initiating streaming process...")
-    stream_query = (df.writeStream
-                    .format("parquet")
-                    .outputMode("append")
-                    .option("path", path)
-                    .start())
+    stream_query = df.writeStream.format("parquet").outputMode("append").option("path", path).start()
     stream_query.awaitTermination()
 
 
