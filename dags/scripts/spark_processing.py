@@ -294,7 +294,7 @@ def main():
     secret_key = os.environ['AWS_SECRET_KEY']
     brokers = "broker:19092"
     topic = "shot_charts"
-    path = "s3://nba-shot-charts"
+    path = "s3a://nba-shot-charts"
     # checkpoint_location = "CHECKPOINT_LOCATION"
 
     spark = initialize_spark_session(app_name, access_key, secret_key)
