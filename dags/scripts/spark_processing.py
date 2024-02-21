@@ -297,12 +297,12 @@ def main():
     path = "s3a://nba-shot-charts"
     checkpoint_location = "/opt/airflow/dags/"
 
-    spark = initialize_spark_session(app_name, access_key, secret_key, checkpoint_location)
+    spark = initialize_spark_session(app_name, access_key, secret_key)
     if spark:
         df = get_streaming_dataframe(spark, brokers, topic)
         if df:
             transformed_df = transform_streaming_data(spark, df)
-            initiate_streaming_to_bucket(transformed_df, path)
+            initiate_streaming_to_bucket(transformed_df, path, checkpoint_location)
 
 
 # Execute the main function if this script is run as the main module
