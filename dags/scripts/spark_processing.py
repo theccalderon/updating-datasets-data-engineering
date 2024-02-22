@@ -292,7 +292,7 @@ def main():
     # TODO: move things here to env variables
     access_key = os.environ['AWS_ACCESS_KEY']
     secret_key = os.environ['AWS_SECRET_KEY']
-    brokers = "127.0.0.1:9094"
+    brokers = "broker:19092"
     topic = "shot_charts"
     path = "s3a://nba-shot-charts"
     checkpoint_location = "/opt/airflow/dags/"
