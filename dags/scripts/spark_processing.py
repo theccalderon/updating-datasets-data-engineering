@@ -154,12 +154,12 @@ def transform_streaming_data(spark, df):
     parsed_df = parsed_df.withColumn("team", team_UDF(col("play")))
 
     # final_df['winner_score'] = final_df.apply(lambda x: get_winner_score(x.winner, x.team, x.play), axis=1) 
-    winner_score_UDF = udf(lambda x: get_winner_score(x), StringType())
-    parsed_df = parsed_df.withColumn("winner_score", winner_score_UDF(col("play")))
+    winner_score_UDF = udf(get_winner_score, StringType())
+    parsed_df = parsed_df.withColumn("winner_score", winner_score_UDF(col("winner"), col("team"), col("play")))
 
     # final_df['loser_score'] = final_df.apply(lambda x: get_loser_score(x.loser, x.team, x.play), axis=1) 
-    loser_score_UDF = udf(lambda x: get_loser_score(x), StringType())
-    parsed_df = parsed_df.withColumn("loser_score", loser_score_UDF(col("play")))
+    loser_score_UDF = udf(get_loser_score, StringType())
+    parsed_df = parsed_df.withColumn("loser_score", loser_score_UDF(col("loser"), col("team"), col("play")))
 
     return  parsed_df
 
@@ -283,7 +283,7 @@ def initiate_streaming_to_bucket(df, path, checkpoint_location):
     :return: None
     """
     logger.info("Initiating streaming process...")
-    stream_query = df.writeStream.format("parquet").outputMode("append").option("path", path).option("checkpointLocation", checkpoint_location).start()
+    stream_query = df.writeStream.format("parquet").outputMode("complete").option("path", path).option("checkpointLocation", checkpoint_location).start()
     stream_query.awaitTermination()
 
 
