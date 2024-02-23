@@ -27,17 +27,17 @@ with DAG(
     max_active_runs=1
 ) as dag:
     
-    # kafka_stream_task = DockerOperator(
-    #     task_id='docker_stream_to_kafka_topic',
-    #     image='ccalderon911217/shot_chart_scraper:latest',
-    #     api_version='auto',
-    #     auto_remove=True,
-    #     mount_tmp_dir=False,
-    #     docker_url="tcp://docker-proxy:2375",
-    #     network_mode='docker_streaming',
-    #     command= "scrapy crawl basketball-reference -a season=2021 -a topic=shot_charts -a kafka_listener='broker:9092'",
-    #     dag=dag
-    # )
+    kafka_stream_task = DockerOperator(
+        task_id='docker_stream_to_kafka_topic',
+        image='ccalderon911217/shot_chart_scraper:latest',
+        api_version='auto',
+        auto_remove=True,
+        mount_tmp_dir=False,
+        docker_url="tcp://docker-proxy:2375",
+        network_mode='docker_streaming',
+        command= "scrapy crawl basketball-reference -a season=2021 -a topic=shot_charts -a kafka_listener='broker:9092'",
+        dag=dag
+    )
 
     spark_stream_task = SparkSubmitOperator(
         task_id = "run_spark_job",
@@ -61,7 +61,7 @@ with DAG(
     # )
 
 
-    # kafka_stream_task >> spark_stream_task
+    kafka_stream_task >> spark_stream_task
     # kafka_stream_task
-    spark_stream_task
+    # spark_stream_task
 

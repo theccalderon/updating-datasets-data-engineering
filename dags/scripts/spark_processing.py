@@ -294,15 +294,18 @@ def main():
     secret_key = os.environ['AWS_SECRET_KEY']
     brokers = "broker:19092"
     topic = "shot_charts"
-    path = "s3a://nba-shot-charts"
+    # path = "s3a://nba-shot-charts"
     checkpoint_location = "/opt/airflow/dags/"
+    s3_bucket = "nba-shot-charts"
+    s3_path = "s3a://{}/path/to/save".format(s3_bucket)
+
 
     spark = initialize_spark_session(app_name, access_key, secret_key)
     if spark:
         df = get_streaming_dataframe(spark, brokers, topic)
         if df:
             transformed_df = transform_streaming_data(spark, df)
-            initiate_streaming_to_bucket(transformed_df, path, checkpoint_location)
+            initiate_streaming_to_bucket(transformed_df, s3_path, checkpoint_location)
 
 
 # Execute the main function if this script is run as the main module
