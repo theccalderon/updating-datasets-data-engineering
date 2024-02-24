@@ -283,7 +283,7 @@ def initiate_streaming_to_bucket(df, path, checkpoint_location):
     :return: None
     """
     logger.info("Initiating streaming process...")
-    stream_query = df.writeStream.format("parquet").outputMode("append").option("path", path).option("checkpointLocation", checkpoint_location).start()
+    stream_query = df.writeStream.format("csv").outputMode("append").option("path", path).option("checkpointLocation", checkpoint_location).start()
     stream_query.awaitTermination()
 
 
