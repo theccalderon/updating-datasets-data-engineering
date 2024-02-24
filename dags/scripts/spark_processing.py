@@ -297,7 +297,7 @@ def main():
     # path = "s3a://nba-shot-charts"
     checkpoint_location = "/opt/airflow/dags/"
     s3_bucket = "nba-shot-charts"
-    s3_path = "s3a://{}/path/to/save".format(s3_bucket)
+    s3_path = "s3a://{}".format(s3_bucket)
 
 
     spark = initialize_spark_session(app_name, access_key, secret_key)
