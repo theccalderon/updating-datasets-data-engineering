@@ -295,10 +295,9 @@ def main():
     brokers = "broker:9092"
     topic = "shot_charts"
     # path = "s3a://nba-shot-charts"
-    checkpoint_location = "/opt/airflow/dags/"
     s3_bucket = "nba-shot-charts"
     s3_path = "s3a://{}".format(s3_bucket)
-
+    checkpoint_location = "s3a://{}/checkpoints".format(s3_bucket)
 
     spark = initialize_spark_session(app_name, access_key, secret_key)
     if spark:
