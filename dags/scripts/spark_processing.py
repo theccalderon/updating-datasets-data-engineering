@@ -289,13 +289,14 @@ def initiate_streaming_to_bucket(df, path, checkpoint_location):
 
 def main():
     app_name = "SparkStructuredStreamingToS3"
-    # TODO: move things here to env variables
     access_key = os.environ['AWS_ACCESS_KEY']
     secret_key = os.environ['AWS_SECRET_KEY']
-    brokers = "broker:9092"
-    topic = "shot_charts"
-    # path = "s3a://nba-shot-charts"
-    s3_bucket = "nba-shot-charts"
+    # brokers = "broker:9092"
+    brokers = os.environ['KAFKA_BROKERS']
+    # topic = "shot_charts"
+    topic = os.environ['KAFKA_TOPIC']
+    # s3_bucket = "nba-shot-charts"
+    s3_bucket = os.environ['S3_BUCKET_PATH']
     s3_path = "s3a://{}".format(s3_bucket)
     checkpoint_location = "s3a://{}/checkpoints".format(s3_bucket)
 

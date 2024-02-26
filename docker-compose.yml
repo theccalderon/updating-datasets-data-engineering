@@ -17,6 +17,9 @@ x-airflow-custom: &airflow-custom
     JAVA_HOME: ${JAVA_HOME:-/usr/lib/jvm/java-17-openjdk-amd64}
     AWS_ACCESS_KEY: ${AWS_ACCESS_KEY:-}
     AWS_SECRET_KEY: ${AWS_SECRET_KEY:-}
+    KAFKA_BROKERS: ${KAFKA_BROKERS:-broker:9092}
+    KAFKA_TOPIC: ${KAFKA_TOPIC:-shot_charts}
+    S3_BUCKET_PATH: ${S3_BUCKET_PATH:-nba-shot-charts}
   volumes:
     - ./dags:/opt/airflow/dags
     - ./logs:/opt/airflow/logs
