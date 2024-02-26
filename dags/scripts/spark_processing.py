@@ -58,6 +58,7 @@ def get_streaming_dataframe(spark, brokers, topic):
             .option("subscribe", topic) \
             .option("delimiter", ",") \
             .option("startingOffsets", "earliest") \
+            .option("maxFilesPerTrigger", 1) \
             .load()
         logger.info("Streaming dataframe fetched successfully")
         return df
