@@ -8,6 +8,13 @@ from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOpe
 
 # Configuration for the DAG's start date
 DAG_START_DATE = datetime(2024, 2, 6, 23, 00)
+TODAY = date.today()
+END_DATE = str(TODAY)[:10]
+# delta is 7 to run it weekly.
+DELTA = timedelta(days=7)
+# START_DATE = str(TODAY - DELTA)
+START_DATE = "2024-03-27"
+SEASON = 2023
 
 # Default arguments for the DAG
 DAG_DEFAULT_ARGS = {
@@ -35,7 +42,8 @@ with DAG(
         mount_tmp_dir=False,
         docker_url="tcp://docker-proxy:2375",
         network_mode='docker_streaming',
-        command= "scrapy crawl basketball-reference -a season=2021 -a topic=shot_charts -a kafka_listener='broker:9092'",
+        command= "scrapy crawl basketball-reference -a season={} -a topic=shot_charts -a kafka_listener='broker:9092' -a start_date='{}' -a end_date='{}'".format(SEASON, START_DATE, END_DATE),
+        # command= "scrapy crawl basketball-reference -a season={} -a topic=shot_charts -a kafka_listener='broker:9092'".format(SEASON),
         dag=dag
     )
 

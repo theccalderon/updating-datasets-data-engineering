@@ -1,5 +1,3 @@
-version: '3.7'
-
 x-airflow-custom: &airflow-custom
   image: airflow_custom:latest
   build:
@@ -156,5 +154,5 @@ networks:
   kafka_network:
     driver: bridge
   default:
-    external:
       name: docker_streaming
+      external: true

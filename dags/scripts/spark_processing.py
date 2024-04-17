@@ -52,7 +52,7 @@ def get_streaming_dataframe(spark, brokers, topic):
     """
     try:
         df = spark \
-            .readStream \
+            .read \
             .format("kafka") \
             .option("kafka.bootstrap.servers", brokers) \
             .option("subscribe", topic) \
@@ -283,22 +283,25 @@ def initiate_streaming_to_bucket(df, path, checkpoint_location):
     :param path: S3 bucket path.
     :return: None
     """
-    logger.info("Initiating streaming process...")
-    stream_query = df.writeStream.format("csv").outputMode("append").option("path", path).option("checkpointLocation", checkpoint_location).start()
-    stream_query.awaitTermination()
+    logger.info("Writing to S3 now...")
+    try:
+        df.write.csv(path)
+    except Exception as e:
+        logger.error("Error writing to CSV in S3 {}".format(e))
+        return
+        
+    # stream_query.awaitTermination()
 
 
 def main():
     app_name = "SparkStructuredStreamingToS3"
     access_key = os.environ['AWS_ACCESS_KEY']
     secret_key = os.environ['AWS_SECRET_KEY']
-    # brokers = "broker:9092"
     brokers = os.environ['KAFKA_BROKERS']
-    # topic = "shot_charts"
     topic = os.environ['KAFKA_TOPIC']
-    # s3_bucket = "nba-shot-charts"
     s3_bucket = os.environ['S3_BUCKET_PATH']
-    s3_path = "s3a://{}".format(s3_bucket)
+    s3_path = "s3a://{}/ongoing".format(s3_bucket)
+    logger.info("S3 path: {}".format(s3_path))
     checkpoint_location = "s3a://{}/checkpoints".format(s3_bucket)
 
     spark = initialize_spark_session(app_name, access_key, secret_key)
