@@ -8,6 +8,13 @@ from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOpe
 
 # Configuration for the DAG's start date
 DAG_START_DATE = datetime(2024, 2, 6, 23, 00)
+TODAY = date.today()
+END_DATE = str(TODAY)[:10]
+# delta is 7 to run it weekly.
+DELTA = timedelta(days=7)
+# START_DATE = str(TODAY - DELTA)
+START_DATE = "2024-03-27"
+SEASON = 2023
 
 # Default arguments for the DAG
 DAG_DEFAULT_ARGS = {
@@ -27,22 +34,25 @@ with DAG(
     max_active_runs=1
 ) as dag:
     
-    # kafka_stream_task = DockerOperator(
-    #     task_id='docker_stream_to_kafka_topic',
-    #     image='ccalderon911217/shot_chart_scraper:latest',
-    #     api_version='auto',
-    #     auto_remove=True,
-    #     docker_url="tcp://docker-proxy:2375",
-    #     network_mode='docker_streaming',
-    #     command= "scrapy crawl basketball-reference -a season=2019 -a topic=shot_charts -a kafka_listener='broker:9092'",
-    #     dag=dag
-    # )
+    kafka_stream_task = DockerOperator(
+        task_id='docker_stream_to_kafka_topic',
+        image='ccalderon911217/shot_chart_scraper:latest',
+        api_version='auto',
+        auto_remove=True,
+        mount_tmp_dir=False,
+        docker_url="tcp://docker-proxy:2375",
+        network_mode='docker_streaming',
+        command= "scrapy crawl basketball-reference -a season={} -a topic=shot_charts -a kafka_listener='broker:9092' -a start_date='{}' -a end_date='{}'".format(SEASON, START_DATE, END_DATE),
+        # command= "scrapy crawl basketball-reference -a season={} -a topic=shot_charts -a kafka_listener='broker:9092'".format(SEASON),
+        dag=dag
+    )
 
     spark_stream_task = SparkSubmitOperator(
         task_id = "run_spark_job",
         application = "/opt/airflow/dags/scripts/spark_processing.py",
         conn_id = "spark-docker",
         packages = "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0",
+        jars = "/opt/airflow/dags/dependencies/aws-java-sdk-bundle-1.11.1026.jar,/opt/airflow/dags/dependencies/hadoop-aws-3.3.2.jar",
         verbose = False
     )
     
@@ -59,6 +69,7 @@ with DAG(
     # )
 
 
-    # kafka_stream_task >> spark_stream_task
-    spark_stream_task
+    kafka_stream_task >> spark_stream_task
+    # kafka_stream_task
+    # spark_stream_task
 
