@@ -2,9 +2,9 @@
 from datetime import datetime, date, timedelta
 from airflow import DAG
 from airflow.providers.docker.operators.docker import DockerOperator
-from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
-from airflow.operators.bash import BashOperator
-from docker.types import Mount
+from airflow.operators.python import PythonOperator
+from airflow.providers.standard.operators.bash import BashOperator
+from kafka.admin import KafkaAdminClient, NewTopic
 import yaml
 
 
@@ -12,12 +12,12 @@ import yaml
 DAG_START_DATE = datetime(2024, 2, 6, 23, 00)
 TODAY = date.today()
 # END_DATE = str(TODAY)[:10]
-END_DATE = "2024-04-05"
+END_DATE = "2024-04-30"
 
 # delta is 7 to run it weekly.
 DELTA = timedelta(days=7)
 # START_DATE = str(TODAY - DELTA)
-START_DATE = "2024-04-02"
+START_DATE = "2024-04-21"
 SEASON = 2024
 
 # Default arguments for the DAG
@@ -37,6 +37,12 @@ def get_container_ip(container_name):
     return socket.gethostbyname(container_name)
 
 spark_master_ip = get_container_ip('spark_master')
+
+def cleanup_kafka_topic():
+    admin = KafkaAdminClient(bootstrap_servers='broker:9092')
+    admin.delete_topics(['shot_charts'])
+    admin.create_topics([NewTopic('shot_charts', num_partitions=1, replication_factor=1)])
+    admin.close()
 
 # Creating the DAG with its configuration
 with DAG(
@@ -65,24 +71,18 @@ with DAG(
     bash_command=f"PYSPARK_PYTHON=python3.10 PYSPARK_DRIVER_PYTHON=python3.10 /opt/spark/bin/spark-submit --master spark://{spark_master_ip}:7077 --jars /opt/airflow/dependencies/spark-sql-kafka-0-10_2.12-3.5.0.jar,/opt/airflow/dependencies/aws-java-sdk-bundle-1.12.262.jar,/opt/airflow/dependencies/hadoop-aws-3.3.4.jar,/opt/airflow/dependencies/kafka-clients-3.5.0.jar,/opt/airflow/dependencies/commons-pool2-2.11.1.jar,/opt/airflow/dependencies/spark-token-provider-kafka-0-10_2.12-3.5.0.jar /opt/airflow/scripts/spark_processing.py"
     )
 
-
-    # spark_merge_dfs_task = SparkSubmitOperator(
-    #     task_id = "run_merge_job",
-    #     application = "/opt/airflow/scripts/spark_merge_dfs.py",
-    #     application_args = [SEASON],
-    #     conn_id = "spark-docker",
-    #     packages = "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0",
-    #     jars = "/opt/airflow/dags/dependencies/aws-java-sdk-bundle-1.11.1026.jar,/opt/airflow/dags/dependencies/hadoop-aws-3.3.2.jar",
-    #     verbose = False,
-    # )
-
     spark_merge_dfs_task = BashOperator(
     task_id="run_merge_job",
     bash_command=f"PYSPARK_PYTHON=python3.10 PYSPARK_DRIVER_PYTHON=python3.10 /opt/spark/bin/spark-submit --master spark://{spark_master_ip}:7077 --jars /opt/airflow/dependencies/spark-sql-kafka-0-10_2.12-3.5.0.jar,/opt/airflow/dependencies/aws-java-sdk-bundle-1.12.262.jar,/opt/airflow/dependencies/hadoop-aws-3.3.4.jar,/opt/airflow/dependencies/kafka-clients-3.5.0.jar,/opt/airflow/dependencies/commons-pool2-2.11.1.jar,/opt/airflow/dependencies/spark-token-provider-kafka-0-10_2.12-3.5.0.jar /opt/airflow/scripts/spark_merge_dfs.py {SEASON}"
     )
 
+    cleanup_kafka = PythonOperator(
+        task_id="cleanup_kafka_topic",
+        python_callable=cleanup_kafka_topic
+    )
 
-    kafka_stream_task >> spark_stream_task >> spark_merge_dfs_task
+
+    kafka_stream_task >> spark_stream_task >> spark_merge_dfs_task >> cleanup_kafka
     # kafka_stream_task
     # spark_stream_task
 

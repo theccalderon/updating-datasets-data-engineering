@@ -1,14 +1,10 @@
+from io import BytesIO
 import logging
 import shutil
 import tarfile
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import from_json, col, udf
-from pyspark.sql.types import StructType, StructField, StringType, IntegerType, FloatType, TimestampType
-import datetime
-import pyspark.pandas as ps
-import pandas as pd
+import boto3
 import os
-import time
 import sys
 
 # Initialize logging
@@ -44,7 +40,7 @@ def initialize_spark_session(app_name, access_key, secret_key):
         return None
 
 
-def get_s3_dataframe(spark, path, season, type):
+def get_s3_dataframe(spark, path, season, type, access_key, secret_key):
     """
     Get a streaming dataframe from Kafka.
     
@@ -57,8 +53,16 @@ def get_s3_dataframe(spark, path, season, type):
     if type == "season":
         # differentiating here in case I have to specify compression and such
         try:
-            df = spark.read.csv(path+"/shots-"+season+".tgz")
-
+            s3 = boto3.client('s3', aws_access_key_id=access_key, aws_secret_access_key=secret_key)
+            obj = s3.get_object(Bucket=path, Key=f"shots-{season}.tgz")
+            
+            with tarfile.open(fileobj=BytesIO(obj['Body'].read()), mode='r:gz') as tar:
+                member = tar.getmembers()[0]
+                csv_content = tar.extractfile(member).read()
+                csv_lines = csv_content.decode('utf-8').splitlines()
+                rdd = spark.sparkContext.parallelize(csv_lines)
+                df = spark.read.option("header", "true").csv(rdd)
+                
             logger.info("Season dataframe fetched successfully")
             return df
         except Exception as e:
@@ -75,10 +79,10 @@ def get_s3_dataframe(spark, path, season, type):
             raise e
 
 def merge_dfs(season_df, ongoing_df):
-    return season_df.union(ongoing_df)
+    return season_df.unionByName(ongoing_df, allowMissingColumns=True)
 
 
-def initiate_streaming_to_bucket(df, path, season):
+def initiate_streaming_to_bucket(df, bucket, season, access_key, secret_key):
     """
     Start streaming the transformed data to the specified S3 bucket in parquet format.
     
@@ -86,30 +90,39 @@ def initiate_streaming_to_bucket(df, path, season):
     :param path: S3 bucket path.
     :return: None
     """
-    # TODO: modify function to write to root S3 bucket in tgz format.
-    logger.info("Writing to S3 now...")
     try:
-        # Define file name
-        file_name = "season-"+season+".tgz"
-
-        # Write DataFrame to local directory as CSV
-        local_dir = "/opt/airflow/temp"
-        local_file_path = os.path.join(local_dir, file_name)
-        df.write.mode("overwrite").option("header", "true").csv(local_file_path)
-
-        # Compress the CSV file to tar.gz
-        with tarfile.open(local_file_path + ".tar.gz", "w:gz") as tar:
-            tar.add(local_file_path, arcname=file_name)
-
-        # Copy the compressed file to S3
-        shutil.copy(local_file_path + ".tar.gz", path)
-
-        # Remove the local CSV file and its compressed version
-        os.remove(local_file_path)
-        os.remove(local_file_path + ".tar.gz")
+        
+        temp_s3_path = f"s3a://{bucket}/temp/season-{season}-output"
+        df.coalesce(1).write.mode("overwrite").option("header", "true").csv(temp_s3_path)
+        s3 = boto3.client('s3', aws_access_key_id=access_key, aws_secret_access_key=secret_key)
+        
+        response = s3.list_objects_v2(Bucket=bucket, Prefix=f"temp/season-{season}-output/")
+        csv_key = [obj['Key'] for obj in response['Contents'] if obj['Key'].endswith('.csv')][0]
+        
+        csv_obj = s3.get_object(Bucket=bucket, Key=csv_key)
+        csv_content = csv_obj['Body'].read()
+        
+        tgz_buffer = BytesIO()
+        with tarfile.open(fileobj=tgz_buffer, mode='w:gz') as tar:
+            info = tarfile.TarInfo(name=f"shots-{season}.csv")
+            info.size = len(csv_content)
+            tar.addfile(info, BytesIO(csv_content))
+        
+        tgz_buffer.seek(0)
+        s3.upload_fileobj(tgz_buffer, bucket, f"shots-{season}.tgz")
+        s3.put_object_acl(
+            Bucket=bucket,
+            Key=f"shots-{season}.tgz",
+            GrantRead='uri=http://acs.amazonaws.com/groups/global/AllUsers'
+        )
+        logger.info(f"Granted public read access to shots-{season}.tgz")
+        
+        s3.delete_objects(Bucket=bucket, Delete={'Objects': [{'Key': obj['Key']} for obj in response['Contents']]})
+        
+        logger.info(f"Successfully wrote shots-{season}.tgz to S3")
     except Exception as e:
-        logger.error("Error writing to CSV in S3 {}".format(e))
-        return
+        logger.error(f"Error writing to S3: {e}")
+        raise e
         
     # stream_query.awaitTermination()
 
@@ -129,18 +142,16 @@ def main():
     try:
         spark = initialize_spark_session(app_name, access_key, secret_key)
         if spark:
-            # TODO: season df is not being read correctly because of tgz format.
-            # need to extract it
-            season_df = get_s3_dataframe(spark, base_path, season, "season")
-            ongoing_df = get_s3_dataframe(spark, ongoing_s3_path, season, "ongoing")
-            # TODO:
-            # 1. Merge/concat dfs
-            # 2. Delete ongoing dataframe
-            # 3. Delete season dataframe
-            # 4. Write merged_df as tgz into s3_bucket
+            season_df = get_s3_dataframe(spark, s3_bucket, season, "season", access_key, secret_key)
+            ongoing_df = get_s3_dataframe(spark, ongoing_s3_path, season, "ongoing", access_key, secret_key)
             if season_df and ongoing_df:
                 merged_df = merge_dfs(season_df, ongoing_df)
-                initiate_streaming_to_bucket(merged_df, s3_bucket, season)
+                initiate_streaming_to_bucket(merged_df, s3_bucket, season, access_key, secret_key)
+                s3 = boto3.client('s3', aws_access_key_id=access_key, aws_secret_access_key=secret_key)
+                response = s3.list_objects_v2(Bucket=s3_bucket, Prefix='ongoing/')
+                if 'Contents' in response:
+                    s3.delete_objects(Bucket=s3_bucket, Delete={'Objects': [{'Key': obj['Key']} for obj in response['Contents']]})
+                    logger.info("Cleaned up ongoing S3 location")
     except Exception as e:
         logger.error(e)
         sys.exit(1)

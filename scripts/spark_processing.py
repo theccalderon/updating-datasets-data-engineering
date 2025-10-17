@@ -5,6 +5,7 @@ from pyspark.sql.types import StructType, StringType, TimestampType
 import datetime
 import os
 import sys
+import re
 
 # Initialize logging
 logging.basicConfig(level=logging.INFO,
@@ -90,33 +91,6 @@ def transform_streaming_data(spark, df):
     .withColumn("parsed_value", from_json(col("value"), json_schema)) \
     .select("parsed_value.*")
 
-    # # get unique list of game ids
-    # game_ids = parsed_df.drop_duplicates(['game_id']).select(['game_id']).rdd.flatMap(lambda x: x).collect()
-    # #add columns to dataframe
-    # list_of_columns = parsed_df.columns + ["time_remaining","quarter"]
-    # # create empty dataframe with list of columns
-    # # final_df = pd.DataFrame(columns=list_of_columns)
-    # final_df = spark.createDataFrame(data=[],schema=list_of_columns)
-
-    # # for each game
-    # for game in game_ids:
-    #     # get dataframe of shots on that game
-    #     temp_df = parsed_df.filter(col("game_id")==game)
-    #     # populate the time_remaining column
-    #     # temp_df['time_remaining'] = temp_df['play'].apply(lambda x: datetime.datetime.strptime(str(x).split(' ')[2], '%H:%M.%S')) 
-    #     time_remaining_UDF = udf(lambda x:time_remaining(x),TimestampType()) 
-    #     temp_df = temp_df.withColumn("time_remaining", time_remaining_UDF(col("play")))
-
-    #     # populate the quarter column
-    #     # temp_df['quarter'] = temp_df['play'].apply(lambda x: str(x).split(' ')[0][0]) 
-    #     quarter_UDF = udf(lambda x:quarter(x), StringType())
-    #     temp_df = temp_df.withColumn("quarter", quarter_UDF(col("play")))
-
-    #     #  sort the plays by quarter and time_remaining
-    #     temp_df = temp_df.sort(['quarter','time_remaining'],ascending=[True,False])
-    #     # add the new dataframe to the final df
-    #     final_df = final_df.union(temp_df)
-
     time_remaining_UDF = udf(lambda x:time_remaining(x),TimestampType()) 
     parsed_df = parsed_df.withColumn("time_remaining", time_remaining_UDF(col("play")))
 
@@ -173,10 +147,10 @@ def shots_by_final(x):
     return str(x).split('<br>')[1].split(' ')[0]+" "+str(x).split('<br>')[1].split(' ')[1]
 
 def outcome_final(x):
-    return str(x).split('<br>')[1].split(' ')[2]
+    return re.search(r'made|missed', str(x).split('<br>')[1]).group(0)
 
 def attempt_final(x):
-    return str(x).split('<br>')[1].split(' ')[3]
+    return re.search(r'[0-9]-pointer?', str(x).split('<br>')[1]).group(0)
 
 def distance_final(x):
     return str(x).split('<br>')[1].split(' ')[-2]+str(x).split('<br>')[1].split(' ')[-1]

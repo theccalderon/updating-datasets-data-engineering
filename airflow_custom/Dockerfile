@@ -13,4 +13,4 @@ ENV PATH=$PATH:$SPARK_HOME/bin
 
 RUN echo "JAVA_HOME=/usr/lib/jvm/java-17-openjdk-arm64" >> /etc/environment
 USER airflow
-RUN pip install apache-airflow apache-airflow-providers-apache-spark
+RUN pip install apache-airflow apache-airflow-providers-apache-spark kafka-python
