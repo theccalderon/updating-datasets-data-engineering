@@ -1,12 +1,10 @@
 import logging
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import from_json, col, udf
-from pyspark.sql.types import StructType, StructField, StringType, IntegerType, FloatType, TimestampType
+from pyspark.sql.types import StructType, StringType, TimestampType
 import datetime
-import pyspark.pandas as ps
-import pandas as pd
 import os
-import time
+import sys
 
 # Initialize logging
 logging.basicConfig(level=logging.INFO,
@@ -56,11 +54,9 @@ def get_streaming_dataframe(spark, brokers, topic):
             .format("kafka") \
             .option("kafka.bootstrap.servers", brokers) \
             .option("subscribe", topic) \
-            .option("delimiter", ",") \
             .option("startingOffsets", "earliest") \
-            .option("maxFilesPerTrigger", 1) \
             .load()
-        logger.info("Streaming dataframe fetched successfully")
+        logger.info(f"Streaming dataframe fetched successfully")
         return df
 
     except Exception as e:
@@ -285,7 +281,7 @@ def initiate_streaming_to_bucket(df, path, checkpoint_location):
     """
     logger.info("Writing to S3 now...")
     try:
-        df.write.csv(path)
+        df.write.mode("overwrite").option("header", "true").csv(path)
     except Exception as e:
         logger.error("Error writing to CSV in S3 {}".format(e))
         return
@@ -303,13 +299,17 @@ def main():
     s3_path = "s3a://{}/ongoing".format(s3_bucket)
     logger.info("S3 path: {}".format(s3_path))
     checkpoint_location = "s3a://{}/checkpoints".format(s3_bucket)
-
-    spark = initialize_spark_session(app_name, access_key, secret_key)
-    if spark:
-        df = get_streaming_dataframe(spark, brokers, topic)
-        if df:
-            transformed_df = transform_streaming_data(spark, df)
-            initiate_streaming_to_bucket(transformed_df, s3_path, checkpoint_location)
+    try:
+        spark = initialize_spark_session(app_name, access_key, secret_key)
+        if spark:
+            df = get_streaming_dataframe(spark, brokers, topic)
+            if df:
+                transformed_df = transform_streaming_data(spark, df)
+                initiate_streaming_to_bucket(transformed_df, s3_path, checkpoint_location)
+    except Exception as e:
+        logger.error(e)
+        sys.exit(1)
+        
 
 
 # Execute the main function if this script is run as the main module
