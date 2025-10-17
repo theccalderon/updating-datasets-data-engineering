@@ -12,12 +12,12 @@ import yaml
 DAG_START_DATE = datetime(2024, 2, 6, 23, 00)
 TODAY = date.today()
 # END_DATE = str(TODAY)[:10]
-END_DATE = "2024-5-24"
+END_DATE = "2024-04-05"
 
 # delta is 7 to run it weekly.
 DELTA = timedelta(days=7)
 # START_DATE = str(TODAY - DELTA)
-START_DATE = "2024-03-27"
+START_DATE = "2024-04-02"
 SEASON = 2024
 
 # Default arguments for the DAG
@@ -57,46 +57,29 @@ with DAG(
         docker_url="tcp://docker-proxy:2375",
         network_mode='updating-datasets-data-engineering_default',
         command= "scrapy crawl basketball-reference -a season={} -a topic=shot_charts -a kafka_listener='broker:9092' -a start_date='{}' -a end_date='{}'".format(SEASON, START_DATE, END_DATE),
-        # command= "scrapy crawl basketball-reference -a season={} -a topic=shot_charts -a kafka_listener='broker:9092'".format(SEASON),
         dag=dag
     )
 
     spark_stream_task = BashOperator(
     task_id="run_spark_job",
     bash_command=f"PYSPARK_PYTHON=python3.10 PYSPARK_DRIVER_PYTHON=python3.10 /opt/spark/bin/spark-submit --master spark://{spark_master_ip}:7077 --jars /opt/airflow/dependencies/spark-sql-kafka-0-10_2.12-3.5.0.jar,/opt/airflow/dependencies/aws-java-sdk-bundle-1.12.262.jar,/opt/airflow/dependencies/hadoop-aws-3.3.4.jar,/opt/airflow/dependencies/kafka-clients-3.5.0.jar,/opt/airflow/dependencies/commons-pool2-2.11.1.jar,/opt/airflow/dependencies/spark-token-provider-kafka-0-10_2.12-3.5.0.jar /opt/airflow/scripts/spark_processing.py"
-)
-
-    # spark_stream_task = SparkSubmitOperator(
-    #     task_id = "run_spark_job",
-    #     application = "/opt/airflow/scripts/spark_processing.py",
-    #     conn_id = "spark-docker",
-    #     conf={'spark.master': 'local[*]'},
-    #     # packages = "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0",
-    #     jars = "/opt/airflow/dependencies/spark-sql-kafka-0-10_2.12-3.5.0.jar,/opt/airflow/dependencies/aws-java-sdk-bundle-1.12.262.jar,/opt/airflow/dependencies/hadoop-aws-3.3.4.jar,/opt/airflow/dependencies/kafka-clients-3.5.0.jar,/opt/airflow/dependencies/commons-pool2-2.11.1.jar,/opt/airflow/dependencies/spark-token-provider-kafka-0-10_2.12-3.5.0.jar",
-    #     verbose = True,
-    # )
-
-    spark_merge_dfs_task = SparkSubmitOperator(
-        task_id = "run_merge_job",
-        application = "/opt/airflow/scripts/spark_merge_dfs.py",
-        application_args = [SEASON],
-        conn_id = "spark-docker",
-        packages = "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0",
-        jars = "/opt/airflow/dags/dependencies/aws-java-sdk-bundle-1.11.1026.jar,/opt/airflow/dags/dependencies/hadoop-aws-3.3.2.jar",
-        verbose = False,
     )
-    
-    # DockerOperator(
-    #     task_id="pyspark_consumer",
-    #     image="rappel-conso/spark:latest",
-    #     api_version="auto",
-    #     auto_remove=True,
-    #     command="./bin/spark-submit --master local[*] --packages org.postgresql:postgresql:42.5.4,org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0 ./spark_streaming.py",
-    #     docker_url='tcp://docker-proxy:2375',
-    #     environment={'SPARK_LOCAL_HOSTNAME': 'localhost'},
-    #     network_mode="airflow-kafka",
-    #     dag=dag,
+
+
+    # spark_merge_dfs_task = SparkSubmitOperator(
+    #     task_id = "run_merge_job",
+    #     application = "/opt/airflow/scripts/spark_merge_dfs.py",
+    #     application_args = [SEASON],
+    #     conn_id = "spark-docker",
+    #     packages = "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0",
+    #     jars = "/opt/airflow/dags/dependencies/aws-java-sdk-bundle-1.11.1026.jar,/opt/airflow/dags/dependencies/hadoop-aws-3.3.2.jar",
+    #     verbose = False,
     # )
+
+    spark_merge_dfs_task = BashOperator(
+    task_id="run_merge_job",
+    bash_command=f"PYSPARK_PYTHON=python3.10 PYSPARK_DRIVER_PYTHON=python3.10 /opt/spark/bin/spark-submit --master spark://{spark_master_ip}:7077 --jars /opt/airflow/dependencies/spark-sql-kafka-0-10_2.12-3.5.0.jar,/opt/airflow/dependencies/aws-java-sdk-bundle-1.12.262.jar,/opt/airflow/dependencies/hadoop-aws-3.3.4.jar,/opt/airflow/dependencies/kafka-clients-3.5.0.jar,/opt/airflow/dependencies/commons-pool2-2.11.1.jar,/opt/airflow/dependencies/spark-token-provider-kafka-0-10_2.12-3.5.0.jar /opt/airflow/scripts/spark_merge_dfs.py {SEASON}"
+    )
 
 
     kafka_stream_task >> spark_stream_task >> spark_merge_dfs_task

@@ -58,12 +58,12 @@ def get_s3_dataframe(spark, path, season, type):
         # differentiating here in case I have to specify compression and such
         try:
             df = spark.read.csv(path+"/shots-"+season+".tgz")
-            logger.info(df.show())
-            logger.info("Seasong dataframe fetched successfully")
+
+            logger.info("Season dataframe fetched successfully")
             return df
         except Exception as e:
-            logger.warning(f"Failed to fetch streaming dataframe. Error: {e}")
-            return None
+            logger.warning(f"Failed to fetch season dataframe. Error: {e}")
+            raise e
     else:
         # ongoing
         try:
@@ -72,8 +72,7 @@ def get_s3_dataframe(spark, path, season, type):
             return df
         except Exception as e:
             logger.warning(f"Failed to fetch streaming dataframe. Error: {e}")
-            return None
-
+            raise e
 
 def merge_dfs(season_df, ongoing_df):
     return season_df.union(ongoing_df)
@@ -120,24 +119,31 @@ def main():
     access_key = os.environ['AWS_ACCESS_KEY']
     secret_key = os.environ['AWS_SECRET_KEY']
     s3_bucket = os.environ['S3_BUCKET_PATH']
-    s3_path = "s3a://{}/ongoing".format(s3_bucket)
-    logger.info("S3 path: {}".format(s3_path))
+    base_path = f"s3a://{s3_bucket}"
+    ongoing_s3_path = f"{base_path}/ongoing".format(s3_bucket)
+    logger.info("S3 path: {}".format(ongoing_s3_path))
     logger.info("Arguments: {}".format(sys.argv))
     season = sys.argv[1]
+    logger.info(f"Season argument is {season}")
     checkpoint_location = "s3a://{}/checkpoints".format(s3_bucket)
-
-    spark = initialize_spark_session(app_name, access_key, secret_key)
-    if spark:
-        season_df = get_s3_dataframe(spark, s3_bucket, season, "season")
-        ongoing_df = get_s3_dataframe(spark, s3_path, season, "ongoing")
-        # TODO:
-        # 1. Merge/concat dfs
-        # 2. Delete ongoing dataframe
-        # 3. Delete season dataframe
-        # 4. Write merged_df as tgz into s3_bucket
-        if season_df and ongoing_df:
-            merged_df = merge_dfs(season_df, ongoing_df)
-            initiate_streaming_to_bucket(merged_df, s3_bucket, season)
+    try:
+        spark = initialize_spark_session(app_name, access_key, secret_key)
+        if spark:
+            # TODO: season df is not being read correctly because of tgz format.
+            # need to extract it
+            season_df = get_s3_dataframe(spark, base_path, season, "season")
+            ongoing_df = get_s3_dataframe(spark, ongoing_s3_path, season, "ongoing")
+            # TODO:
+            # 1. Merge/concat dfs
+            # 2. Delete ongoing dataframe
+            # 3. Delete season dataframe
+            # 4. Write merged_df as tgz into s3_bucket
+            if season_df and ongoing_df:
+                merged_df = merge_dfs(season_df, ongoing_df)
+                initiate_streaming_to_bucket(merged_df, s3_bucket, season)
+    except Exception as e:
+        logger.error(e)
+        sys.exit(1)
 
 
 # Execute the main function if this script is run as the main module
