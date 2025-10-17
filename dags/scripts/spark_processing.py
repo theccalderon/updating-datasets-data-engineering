@@ -1,11 +1,12 @@
 import logging
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import from_json, col, udf
-from pyspark.sql.types import StructType, StringType, TimestampType
+from pyspark.sql.types import StructType, StructField, StringType, IntegerType, FloatType, TimestampType
 import datetime
+import pyspark.pandas as ps
+import pandas as pd
 import os
-import sys
-import re
+import time
 
 # Initialize logging
 logging.basicConfig(level=logging.INFO,
@@ -55,9 +56,11 @@ def get_streaming_dataframe(spark, brokers, topic):
             .format("kafka") \
             .option("kafka.bootstrap.servers", brokers) \
             .option("subscribe", topic) \
+            .option("delimiter", ",") \
             .option("startingOffsets", "earliest") \
+            .option("maxFilesPerTrigger", 1) \
             .load()
-        logger.info(f"Streaming dataframe fetched successfully")
+        logger.info("Streaming dataframe fetched successfully")
         return df
 
     except Exception as e:
@@ -90,6 +93,33 @@ def transform_streaming_data(spark, df):
     parsed_df = df.selectExpr("CAST(key AS STRING)", "CAST(value AS STRING)") \
     .withColumn("parsed_value", from_json(col("value"), json_schema)) \
     .select("parsed_value.*")
+
+    # # get unique list of game ids
+    # game_ids = parsed_df.drop_duplicates(['game_id']).select(['game_id']).rdd.flatMap(lambda x: x).collect()
+    # #add columns to dataframe
+    # list_of_columns = parsed_df.columns + ["time_remaining","quarter"]
+    # # create empty dataframe with list of columns
+    # # final_df = pd.DataFrame(columns=list_of_columns)
+    # final_df = spark.createDataFrame(data=[],schema=list_of_columns)
+
+    # # for each game
+    # for game in game_ids:
+    #     # get dataframe of shots on that game
+    #     temp_df = parsed_df.filter(col("game_id")==game)
+    #     # populate the time_remaining column
+    #     # temp_df['time_remaining'] = temp_df['play'].apply(lambda x: datetime.datetime.strptime(str(x).split(' ')[2], '%H:%M.%S')) 
+    #     time_remaining_UDF = udf(lambda x:time_remaining(x),TimestampType()) 
+    #     temp_df = temp_df.withColumn("time_remaining", time_remaining_UDF(col("play")))
+
+    #     # populate the quarter column
+    #     # temp_df['quarter'] = temp_df['play'].apply(lambda x: str(x).split(' ')[0][0]) 
+    #     quarter_UDF = udf(lambda x:quarter(x), StringType())
+    #     temp_df = temp_df.withColumn("quarter", quarter_UDF(col("play")))
+
+    #     #  sort the plays by quarter and time_remaining
+    #     temp_df = temp_df.sort(['quarter','time_remaining'],ascending=[True,False])
+    #     # add the new dataframe to the final df
+    #     final_df = final_df.union(temp_df)
 
     time_remaining_UDF = udf(lambda x:time_remaining(x),TimestampType()) 
     parsed_df = parsed_df.withColumn("time_remaining", time_remaining_UDF(col("play")))
@@ -147,10 +177,10 @@ def shots_by_final(x):
     return str(x).split('<br>')[1].split(' ')[0]+" "+str(x).split('<br>')[1].split(' ')[1]
 
 def outcome_final(x):
-    return re.search(r'made|missed', str(x).split('<br>')[1]).group(0)
+    return str(x).split('<br>')[1].split(' ')[2]
 
 def attempt_final(x):
-    return re.search(r'[0-9]-pointer?', str(x).split('<br>')[1]).group(0)
+    return str(x).split('<br>')[1].split(' ')[3]
 
 def distance_final(x):
     return str(x).split('<br>')[1].split(' ')[-2]+str(x).split('<br>')[1].split(' ')[-1]
@@ -255,7 +285,7 @@ def initiate_streaming_to_bucket(df, path, checkpoint_location):
     """
     logger.info("Writing to S3 now...")
     try:
-        df.write.mode("overwrite").option("header", "true").csv(path)
+        df.write.csv(path)
     except Exception as e:
         logger.error("Error writing to CSV in S3 {}".format(e))
         return
@@ -273,17 +303,13 @@ def main():
     s3_path = "s3a://{}/ongoing".format(s3_bucket)
     logger.info("S3 path: {}".format(s3_path))
     checkpoint_location = "s3a://{}/checkpoints".format(s3_bucket)
-    try:
-        spark = initialize_spark_session(app_name, access_key, secret_key)
-        if spark:
-            df = get_streaming_dataframe(spark, brokers, topic)
-            if df:
-                transformed_df = transform_streaming_data(spark, df)
-                initiate_streaming_to_bucket(transformed_df, s3_path, checkpoint_location)
-    except Exception as e:
-        logger.error(e)
-        sys.exit(1)
-        
+
+    spark = initialize_spark_session(app_name, access_key, secret_key)
+    if spark:
+        df = get_streaming_dataframe(spark, brokers, topic)
+        if df:
+            transformed_df = transform_streaming_data(spark, df)
+            initiate_streaming_to_bucket(transformed_df, s3_path, checkpoint_location)
 
 
 # Execute the main function if this script is run as the main module
