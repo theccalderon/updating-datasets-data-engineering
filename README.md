@@ -1,6 +1,3 @@
-Here's the updated README with the network changes:
-
-```markdown
 # Data Streaming Pipeline with Airflow, Kafka, and Spark
 
 A data pipeline that scrapes basketball data, streams it through Kafka, processes it with Spark, and stores results in Amazon S3.
@@ -255,5 +252,4 @@ docker-compose down -v
 
 ## Contributors
 
-[Cesar Calderon Muro]
-```
+[Cesar Calderon Muro
