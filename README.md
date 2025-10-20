@@ -50,7 +50,7 @@ This pipeline consists of the following components:
 ### 1. Clone the Repository
 
 ```bash
-git clone <your-repo-url>
+git clone <[repo url](https://github.com/theccalderon/updating-datasets-data-engineering)>
 cd <project-directory>
 ```
 
