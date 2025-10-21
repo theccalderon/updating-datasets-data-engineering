@@ -9,7 +9,6 @@ This pipeline consists of the following components:
 - **Apache Airflow** (v3.1.0) - Workflow orchestration
 - **Apache Kafka** (Confluent) - Message streaming
 - **Apache Spark** (v3.5.7) - Data processing
-- **Kafka UI** - Kafka cluster monitoring
 - **PostgreSQL** - Airflow metadata database
 - **Amazon S3** - Data storage
 
