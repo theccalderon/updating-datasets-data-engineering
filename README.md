@@ -11,7 +11,6 @@ This pipeline consists of the following components:
 - **Apache Spark** (v3.5.7) - Data processing
 - **Kafka UI** - Kafka cluster monitoring
 - **PostgreSQL** - Airflow metadata database
-- **Redis** - Celery broker for Airflow
 - **Amazon S3** - Data storage
 
 ## Prerequisites
