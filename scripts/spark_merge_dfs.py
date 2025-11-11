@@ -57,9 +57,10 @@ def get_s3_dataframe(spark, path, season, type, access_key, secret_key):
             obj = s3.get_object(Bucket=path, Key=f"shots-{season}.tgz")
             
             with tarfile.open(fileobj=BytesIO(obj['Body'].read()), mode='r:gz') as tar:
-                member = tar.getmembers()[0]
-                csv_content = tar.extractfile(member).read()
-                csv_lines = csv_content.decode('utf-8').splitlines()
+                members = [m for m in tar.getmembers() if m.name.endswith('.csv') and not m.name.startswith('._')]
+                csv_content = tar.extractfile(members[0]).read()
+                csv_lines = csv_content.decode('utf-8', errors='replace').splitlines()
+                logger.info(f"First 3 lines: {csv_lines[:3]}")
                 rdd = spark.sparkContext.parallelize(csv_lines)
                 df = spark.read.option("header", "true").csv(rdd)
                 
@@ -71,7 +72,7 @@ def get_s3_dataframe(spark, path, season, type, access_key, secret_key):
     else:
         # ongoing
         try:
-            df = spark.read.csv(path)
+            df = spark.read.option("header", "true").csv(path)
             logger.info("Ongoing dataframe fetched successfully")
             return df
         except Exception as e:
@@ -79,7 +80,7 @@ def get_s3_dataframe(spark, path, season, type, access_key, secret_key):
             raise e
 
 def merge_dfs(season_df, ongoing_df):
-    return season_df.unionByName(ongoing_df, allowMissingColumns=True)
+    return season_df.unionByName(ongoing_df, allowMissingColumns=True).dropDuplicates(['game_id', 'time_remaining', 'quarter'])
 
 
 def initiate_streaming_to_bucket(df, bucket, season, access_key, secret_key):
@@ -145,6 +146,8 @@ def main():
             season_df = get_s3_dataframe(spark, s3_bucket, season, "season", access_key, secret_key)
             ongoing_df = get_s3_dataframe(spark, ongoing_s3_path, season, "ongoing", access_key, secret_key)
             if season_df and ongoing_df:
+                logger.info(f"Season columns: {season_df.columns}")
+                logger.info(f"Ongoing columns: {ongoing_df.columns}")
                 merged_df = merge_dfs(season_df, ongoing_df)
                 initiate_streaming_to_bucket(merged_df, s3_bucket, season, access_key, secret_key)
                 s3 = boto3.client('s3', aws_access_key_id=access_key, aws_secret_access_key=secret_key)
