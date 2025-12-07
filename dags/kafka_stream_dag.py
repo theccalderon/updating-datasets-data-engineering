@@ -11,14 +11,14 @@ import yaml
 # Configuration for the DAG's start date
 DAG_START_DATE = datetime(2024, 2, 6, 23, 00)
 TODAY = date.today()
-# END_DATE = str(TODAY)[:10]
-END_DATE = "2024-04-30"
+END_DATE = str(TODAY)[:10]
+# END_DATE = "2024-05-31"
 
 # delta is 7 to run it weekly.
-DELTA = timedelta(days=7)
-# START_DATE = str(TODAY - DELTA)
-START_DATE = "2024-04-21"
-SEASON = 2024
+DELTA = timedelta(days=1)
+START_DATE = str(TODAY - DELTA)
+# START_DATE = "2024-04-31"
+SEASON = 2025
 
 # Default arguments for the DAG
 DAG_DEFAULT_ARGS = {
@@ -48,7 +48,7 @@ def cleanup_kafka_topic():
 with DAG(
     'scrapper_dag',  # Renamed for uniqueness
     default_args=DAG_DEFAULT_ARGS,
-    schedule='05 04 * * 0',
+    schedule='05 10 * * *',
     catchup=False,
     description='runs scrapper and streams to kafka topic',
     max_active_runs=1
